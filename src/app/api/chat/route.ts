@@ -16,13 +16,19 @@ export async function POST(req: Request) {
       parts: [{ text: msg.content }]
     }));
 
-    // Initialize the model (using gemini-1.5-flash for speed and lower cost)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    // FIX: Gemini strictly requires the conversation history to start with a 'user' message.
+    // If the first message is the bot's initial greeting, we remove it from the history array.
+    if (formattedHistory.length > 0 && formattedHistory[0].role === 'model') {
+      formattedHistory.shift(); 
+    }
 
-    // Extract the very last message from the array to send as the new prompt
+    // Initialize the model (using gemini-1.5-flash for speed and lower cost)
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
+
+    // Extract the very last message from the array to send as the current prompt
     const lastMessage = formattedHistory.pop();
     
-    // Start a chat session passing the previous conversation history
+    // Now 'formattedHistory' is either empty or safely begins with a 'user' message
     const chat = model.startChat({
       history: formattedHistory,
     });
