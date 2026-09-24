@@ -30,3 +30,25 @@ CREATE TABLE chat_history (
     content TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ==========================================
+-- SECURITY: ROW LEVEL SECURITY (RLS) POLICIES
+-- ==========================================
+
+-- Enable RLS on materials to prevent unauthorized modifications
+ALTER TABLE materials ENABLE ROW LEVEL SECURITY;
+
+-- Allow anyone to read the catalog, but block inserts/updates/deletes
+CREATE POLICY "Allow public read access to materials" 
+ON materials 
+FOR SELECT 
+USING (true);
+
+-- Enable RLS on chat_history
+ALTER TABLE chat_history ENABLE ROW LEVEL SECURITY;
+
+-- Allow anonymous users to read and write to the chat history
+CREATE POLICY "Allow public insert and read to chat_history" 
+ON chat_history 
+FOR ALL 
+USING (true);
