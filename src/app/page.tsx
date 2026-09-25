@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Send, Bot, User } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Send, Bot, User, Clock, AlertCircle } from 'lucide-react';
 
 type Message = {
   id: string;
@@ -19,46 +19,115 @@ export default function Home() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  
+  // States for the automatic retry mechanism
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 1; // Strict limit to prevent infinite loops
+  const failedMessagesRef = useRef<Message[]>([]);
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
-
-    // 1. Save the new messages array including the user's input
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input };
-    const newMessages = [...messages, userMsg];
+  // Effect to handle the countdown timer
+  useEffect(() => {
+    if (countdown === null) return;
     
-    // 2. Update UI immediately
-    setMessages(newMessages);
-    setInput('');
-    setIsLoading(true);
+    // When countdown hits zero, stop the timer and trigger the retry
+    if (countdown === 0) {
+      setCountdown(null);
+      executeRequest(failedMessagesRef.current);
+      return;
+    }
 
+    // Decrease the countdown every second
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [countdown]);
+
+  // Format seconds into MM:SS
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // Core function to communicate with the Next.js backend
+  const executeRequest = async (chatHistory: Message[]) => {
+    setIsLoading(true);
     try {
-      // 3. Send the entire conversation history to our Next.js API
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ messages: newMessages }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: chatHistory }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to fetch response from API');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.code || 'general_error');
       }
 
-      // 4. Get the AI's reply and add it to the chat
       const data = await response.json();
       const botMsg: Message = { id: Date.now().toString(), role: 'model', content: data.reply };
       setMessages((prev) => [...prev, botMsg]);
+      
+      // Reset retries upon success
+      setRetryCount(0);
 
-    } catch (error) {
-      console.error(error);
-      // Fallback message in case the API fails
-      const errorMsg: Message = { id: Date.now().toString(), role: 'model', content: 'Connection error. Please check your API keys or try again.' };
-      setMessages((prev) => [...prev, errorMsg]);
+    } catch (error: any) {
+      console.error("Chat error:", error);
+      
+      if (error.message === 'service_unavailable') {
+        if (retryCount < MAX_RETRIES) {
+          // Initiate retry protocol
+          setRetryCount((prev) => prev + 1);
+          failedMessagesRef.current = chatHistory;
+          setCountdown(180); // Set to 3 minutes
+        } else {
+          // Max retries reached, abort and inform user
+          setRetryCount(0);
+          const errorMsg: Message = { 
+            id: Date.now().toString(), 
+            role: 'model', 
+            content: 'Our quoting systems are currently experiencing sustained high demand. Please try again later.' 
+          };
+          setMessages((prev) => [...prev, errorMsg]);
+        }
+      } else {
+        const errorMsg: Message = { 
+          id: Date.now().toString(), 
+          role: 'model', 
+          content: 'We are experiencing technical difficulties. Please try again later.' 
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+      }
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || countdown !== null) return; // Extra safety guard
+
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input };
+    const newMessages = [...messages, userMsg];
+    
+    setMessages(newMessages);
+    setInput('');
+    
+    await executeRequest(newMessages);
+  };
+
+  // Function to manually cancel the automatic retry
+  const handleCancelRetry = () => {
+    setCountdown(null);
+    setRetryCount(0);
+    const cancelMsg: Message = { 
+      id: Date.now().toString(), 
+      role: 'model', 
+      content: 'Automatic retry cancelled.' 
+    };
+    setMessages((prev) => [...prev, cancelMsg]);
   };
 
   return (
@@ -104,23 +173,47 @@ export default function Home() {
               </div>
             </div>
           )}
+
+          {/* Retry Countdown Banner (Moved into chat flow) */}
+          {countdown !== null && (
+            <div className="flex justify-start animate-fade-in">
+              <div className="flex gap-3 max-w-[85%] flex-row">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 bg-[#fff3eb] text-[#f46b10] border border-[#f46b10]/20">
+                  <AlertCircle size={16} />
+                </div>
+                <div className="p-4 bg-[#fff3eb] border border-[#f46b10]/30 text-[#d95a0c] rounded-2xl rounded-tl-none shadow-sm flex flex-col gap-2">
+                  <div className="flex items-center gap-2 text-[15px]">
+                    <Clock size={16} />
+                    <span>High demand. Retrying automatically in <strong>{formatTime(countdown)}</strong>...</span>
+                  </div>
+                  <button 
+                    onClick={handleCancelRetry}
+                    className="text-sm font-medium underline hover:text-[#f46b10] transition-colors self-start"
+                  >
+                    Cancel retry
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Input Area (FIXED: Button no longer overlaps text) */}
-        <div className="p-4 bg-white border-t border-gray-200">
+        {/* Input Area (Visually disabled during countdown) */}
+        <div className={`p-4 bg-white border-t border-gray-200 transition-opacity ${countdown !== null ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
           <div className="flex gap-3 max-w-4xl mx-auto">
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="E.g., I need 2000 holographic stickers..."
-              className="flex-1 p-4 border border-gray-300 rounded-xl focus:outline-none focus:border-[#f46b10] focus:ring-1 focus:ring-[#f46b10] transition-all bg-gray-50 focus:bg-white"
+              placeholder={countdown !== null ? "Waiting for retry..." : "E.g., I need 2000 holographic stickers..."}
+              className="flex-1 p-4 border border-gray-300 rounded-xl focus:outline-none focus:border-[#f46b10] focus:ring-1 focus:ring-[#f46b10] transition-all bg-gray-50 focus:bg-white disabled:bg-gray-100 disabled:text-gray-500 cursor-text disabled:cursor-not-allowed"
+              disabled={countdown !== null || isLoading}
             />
             <button
               onClick={handleSend}
-              disabled={isLoading || !input.trim()}
-              className="px-6 flex items-center justify-center bg-[#f46b10] text-white rounded-xl hover:bg-[#d95a0c] disabled:opacity-50 disabled:hover:bg-[#f46b10] transition-colors"
+              disabled={isLoading || !input.trim() || countdown !== null}
+              className="px-6 flex items-center justify-center bg-[#f46b10] text-white rounded-xl hover:bg-[#d95a0c] disabled:bg-gray-300 disabled:text-gray-500 transition-colors cursor-pointer disabled:cursor-not-allowed"
             >
               <Send size={20} />
             </button>
