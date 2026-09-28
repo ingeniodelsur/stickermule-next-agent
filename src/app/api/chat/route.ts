@@ -18,40 +18,59 @@ const getMaterialsTool = {
 
 export async function POST(req: Request) {
   try {
-    // NEW: Extract isRetry flag to prevent duplicate DB entries
+    // Extract isRetry flag to prevent duplicate DB entries
     const { messages, sessionId, isRetry } = await req.json();
 
     // 1. Construct the exact conversation history array
-    const conversationHistory: any[] = messages.map((msg: { role: string; content: string }) => ({
-      role: msg.role === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.content }]
-    }));
+    // NEW: Updated mapping to support multi-modal parts (text + inline images)
+    const conversationHistory: any[] = messages.map((msg: any) => {
+      const parts: any[] = [{ text: msg.content }];
+      
+      // NEW: If the message contains inlineData (Base64 image), append it to the parts array
+      if (msg.inlineData) {
+        parts.push({
+          inlineData: {
+            data: msg.inlineData.data,
+            mimeType: msg.inlineData.mimeType
+          }
+        });
+      }
+
+      return {
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: parts
+      };
+    });
 
     // Prevent API error by ensuring the history starts with a 'user' message
     if (conversationHistory.length > 0 && conversationHistory[0].role === 'model') {
       conversationHistory.shift(); 
     }
 
-    // NEW: Extract the latest user message and save it to the database ONLY if it is not a retry
+    // Extract the latest user message and save it to the database ONLY if it is not a retry
     const latestUserMessage = messages[messages.length - 1];
     if (sessionId && latestUserMessage.role === 'user' && !isRetry) {
+      // Note: We only save the text content to DB to save space, not the massive base64 image string
       const { error: insertUserError } = await supabase.from('chat_history').insert([
         { session_id: sessionId, role: 'user', content: latestUserMessage.content }
       ]);
       if (insertUserError) console.error("Error saving user message to DB:", insertUserError);
     }
 
-    // Initialize the model with the tool, formatting rules, and strict guardrails
+    // Initialize the model with the tool, formatting rules, strict guardrails, AND vision capabilities
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.6-flash', // Gemini Flash inherently supports multi-modal inputs
       tools: [{ functionDeclarations: [getMaterialsTool] }],
-      systemInstruction: `You are a professional quoting agent for Sticker Mule. Always use the 'getMaterialsCatalog' tool to get real-time prices before giving a quote. 
-      To calculate a quote: multiply the width x height to get square inches, multiply that by the base_price_per_inch of the requested material, and then multiply by the quantity. 
+      // NEW: Updated instructions to handle autonomous routing between logo evaluation and quoting
+      systemInstruction: `You are a professional quoting and design-support agent for Sticker Mule. 
       
-      CRITICAL FORMATTING RULE: You MUST present the final quote using a structured Markdown table containing exactly these columns: 'Material', 'Size (inches)', 'Quantity', and 'Total Cost (USD)'. 
-      Do not use plain text for the math breakdown. After the table, add a brief, friendly closing.
+      CORE CAPABILITIES:
+      1. QUOTING: Always use the 'getMaterialsCatalog' tool to get real-time prices. To calculate a quote: multiply width x height to get square inches, multiply by the base_price_per_inch, and multiply by quantity. 
+      2. VISION & DESIGN: If a user uploads an image (a logo or artwork), analyze its visual quality, colors, complexity, and resolution. Advise them if it looks suitable for high-quality sticker printing or if they might need a vector/higher-resolution version.
       
-      SECURITY GUARDRAIL (STRICT): You are exclusively a Sticker Mule agent. If a user asks you about topics unrelated to custom stickers, labels, packaging, or Sticker Mule services (e.g., programming, history, recipes, general trivia, or personal advice), you MUST politely decline to answer. Apologize and redirect the conversation back to how you can help them with custom printing.`
+      CRITICAL FORMATTING RULE: You MUST present final quotes using a structured Markdown table containing exactly these columns: 'Material', 'Size (inches)', 'Quantity', and 'Total Cost (USD)'. Do not use plain text for math breakdowns.
+      
+      SECURITY GUARDRAIL (STRICT): You are exclusively a Sticker Mule agent. If a user asks about topics unrelated to custom stickers, labels, packaging, logo design, or Sticker Mule services, you MUST politely decline and redirect the conversation.`
     });
 
     // 2. First call to the model sending the entire history
