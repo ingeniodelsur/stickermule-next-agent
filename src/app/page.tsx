@@ -24,6 +24,7 @@ export default function Home() {
   // Loading and action indicator states
   const [isLoading, setIsLoading] = useState(false);
   const [actionText, setActionText] = useState('Analyzing request...');
+  const [sessionId, setSessionId] = useState<string>('');
   
   const [countdown, setCountdown] = useState<number | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -73,6 +74,16 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [countdown]);
 
+  useEffect(() => {
+    let currentSession = localStorage.getItem('sm_chat_session');
+    if (!currentSession) {
+      // Generate a unique random ID (supported in modern browsers)
+      currentSession = crypto.randomUUID();
+      localStorage.setItem('sm_chat_session', currentSession);
+    }
+    setSessionId(currentSession);
+  }, []);
+
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -85,7 +96,10 @@ export default function Home() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: chatHistory }),
+        body: JSON.stringify({ 
+          messages: chatHistory,
+          sessionId: sessionId 
+        }),
       });
 
       if (!response.ok) {
