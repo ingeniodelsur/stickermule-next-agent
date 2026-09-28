@@ -1,11 +1,1 @@
-/* Inject Tailwind's base styles, components, and utility classes */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Base HTML/Body reset for a clean canvas */
-@layer base {
-  body {
-    @apply bg-gray-100 text-gray-900 antialiased;
-  }
-}
+@import "tailwindcss";
