@@ -21,12 +21,15 @@ export async function POST(req: Request) {
     // Extract isRetry flag to prevent duplicate DB entries
     const { messages, sessionId, isRetry } = await req.json();
 
-    // 1. Construct the exact conversation history array
-    // NEW: Updated mapping to support multi-modal parts (text + inline images)
-    const conversationHistory: any[] = messages.map((msg: any) => {
+    // NEW: Sliding Window - Keep only the last 10 messages (5 user, 5 model) to save tokens
+    const MAX_HISTORY_LENGTH = 10;
+    const recentMessages = messages.slice(-MAX_HISTORY_LENGTH);
+
+    // 1. Construct the exact conversation history array using ONLY the recent messages
+    const conversationHistory: any[] = recentMessages.map((msg: any) => {
       const parts: any[] = [{ text: msg.content }];
       
-      // NEW: If the message contains inlineData (Base64 image), append it to the parts array
+      // If the message contains inlineData (Base64 image), append it to the parts array
       if (msg.inlineData) {
         parts.push({
           inlineData: {
@@ -48,9 +51,9 @@ export async function POST(req: Request) {
     }
 
     // Extract the latest user message and save it to the database ONLY if it is not a retry
+    // Note: We save ALL messages to Supabase for analytics, but only send the last 10 to Gemini
     const latestUserMessage = messages[messages.length - 1];
     if (sessionId && latestUserMessage.role === 'user' && !isRetry) {
-      // Note: We only save the text content to DB to save space, not the massive base64 image string
       const { error: insertUserError } = await supabase.from('chat_history').insert([
         { session_id: sessionId, role: 'user', content: latestUserMessage.content }
       ]);
@@ -59,8 +62,7 @@ export async function POST(req: Request) {
 
     // Initialize the model with the tool, formatting rules, strict guardrails, AND vision capabilities
     const model = genAI.getGenerativeModel({ 
-      // FIX: Switched from gemini-3.6-flash to gemini-3.5-flash-lite to increase free tier RPD limit from 20 to 500
-      model: 'gemini-3.5-flash-lite', 
+      model: 'gemini-3.5-flash-lite', // Using Lite model for higher free tier limits
       tools: [{ functionDeclarations: [getMaterialsTool] }],
       systemInstruction: `You are a professional quoting and design-support agent for Sticker Mule. 
       
@@ -73,7 +75,7 @@ export async function POST(req: Request) {
       SECURITY GUARDRAIL (STRICT): You are exclusively a Sticker Mule agent. If a user asks about topics unrelated to custom stickers, labels, packaging, logo design, or Sticker Mule services, you MUST politely decline and redirect the conversation.`
     });
 
-    // 2. First call to the model sending the entire history
+    // 2. First call to the model sending the truncated history
     const result1 = await model.generateContent({ contents: conversationHistory });
     const aiResponse = result1.response;
     const functionCalls = aiResponse.functionCalls();
