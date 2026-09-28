@@ -21,9 +21,10 @@ export default function Home() {
   ]);
   const [input, setInput] = useState('');
   
-  // Loading and action indicator states
   const [isLoading, setIsLoading] = useState(false);
   const [actionText, setActionText] = useState('Analyzing request...');
+  
+  // State to hold the unique session ID
   const [sessionId, setSessionId] = useState<string>('');
   
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -40,6 +41,49 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading, countdown, actionText]);
+
+  // Initialize or retrieve the session ID from Local Storage
+  useEffect(() => {
+    let currentSession = localStorage.getItem('sm_chat_session');
+    if (!currentSession) {
+      currentSession = crypto.randomUUID();
+      localStorage.setItem('sm_chat_session', currentSession);
+    }
+    setSessionId(currentSession);
+  }, []);
+
+  // NEW: Load chat history when sessionId is established
+  useEffect(() => {
+    const loadHistory = async (id: string) => {
+      try {
+        const response = await fetch(`/api/history?sessionId=${id}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.messages && data.messages.length > 0) {
+            
+            // Map database records to our frontend Message type
+            const historyMessages: Message[] = data.messages.map((msg: any) => ({
+              id: msg.id.toString(),
+              role: msg.role,
+              content: msg.content
+            }));
+            
+            // Keep the default welcome message, then append the history
+            setMessages([
+              { id: '1', role: 'model', content: 'Hi! I am the Sticker Mule AI Assistant. How can I help you with your custom stickers today?' },
+              ...historyMessages
+            ]);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load history:", error);
+      }
+    };
+
+    if (sessionId) {
+      loadHistory(sessionId);
+    }
+  }, [sessionId]);
 
   // Dynamic action text rotation while loading
   useEffect(() => {
@@ -74,16 +118,6 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [countdown]);
 
-  useEffect(() => {
-    let currentSession = localStorage.getItem('sm_chat_session');
-    if (!currentSession) {
-      // Generate a unique random ID (supported in modern browsers)
-      currentSession = crypto.randomUUID();
-      localStorage.setItem('sm_chat_session', currentSession);
-    }
-    setSessionId(currentSession);
-  }, []);
-
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -96,6 +130,7 @@ export default function Home() {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        // Send the sessionId along with the message history
         body: JSON.stringify({ 
           messages: chatHistory,
           sessionId: sessionId 
