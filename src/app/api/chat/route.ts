@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { getMaterialsCatalog } from '@/lib/tools';
-import { supabase } from '@/lib/supabase'; // NEW: Import Supabase client to save chat history
+import { supabase } from '@/lib/supabase'; // Import Supabase client to save chat history
 
 // Initialize the Google Gemini SDK
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -18,8 +18,8 @@ const getMaterialsTool = {
 
 export async function POST(req: Request) {
   try {
-    // NEW: Extract sessionId along with messages from the frontend request
-    const { messages, sessionId } = await req.json();
+    // NEW: Extract isRetry flag to prevent duplicate DB entries
+    const { messages, sessionId, isRetry } = await req.json();
 
     // 1. Construct the exact conversation history array
     const conversationHistory: any[] = messages.map((msg: { role: string; content: string }) => ({
@@ -32,9 +32,9 @@ export async function POST(req: Request) {
       conversationHistory.shift(); 
     }
 
-    // NEW: Extract the latest user message and save it to the database
+    // NEW: Extract the latest user message and save it to the database ONLY if it is not a retry
     const latestUserMessage = messages[messages.length - 1];
-    if (sessionId && latestUserMessage.role === 'user') {
+    if (sessionId && latestUserMessage.role === 'user' && !isRetry) {
       const { error: insertUserError } = await supabase.from('chat_history').insert([
         { session_id: sessionId, role: 'user', content: latestUserMessage.content }
       ]);
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
       finalResponseText = aiResponse.text();
     }
 
-    // NEW: Save the AI's final response to the database
+    // Save the AI's final response to the database
     if (sessionId && finalResponseText) {
       const { error: insertModelError } = await supabase.from('chat_history').insert([
         { session_id: sessionId, role: 'model', content: finalResponseText }

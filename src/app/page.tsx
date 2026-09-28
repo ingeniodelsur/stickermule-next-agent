@@ -52,7 +52,7 @@ export default function Home() {
     setSessionId(currentSession);
   }, []);
 
-  // NEW: Load chat history when sessionId is established
+  // Load chat history when sessionId is established
   useEffect(() => {
     const loadHistory = async (id: string) => {
       try {
@@ -107,7 +107,8 @@ export default function Home() {
     
     if (countdown === 0) {
       setCountdown(null);
-      executeRequest(failedMessagesRef.current);
+      // NEW: Pass isRetry = true when the countdown finishes
+      executeRequest(failedMessagesRef.current, true);
       return;
     }
 
@@ -124,16 +125,18 @@ export default function Home() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const executeRequest = async (chatHistory: Message[]) => {
+  // NEW: Add isRetry parameter defaulting to false
+  const executeRequest = async (chatHistory: Message[], isRetry: boolean = false) => {
     setIsLoading(true);
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Send the sessionId along with the message history
+        // NEW: Send the isRetry flag to the backend
         body: JSON.stringify({ 
           messages: chatHistory,
-          sessionId: sessionId 
+          sessionId: sessionId,
+          isRetry: isRetry
         }),
       });
 
@@ -186,7 +189,8 @@ export default function Home() {
     setMessages(newMessages);
     setInput('');
     
-    await executeRequest(newMessages);
+    // NEW: Explicitly pass false for the initial request (not a retry)
+    await executeRequest(newMessages, false);
   };
 
   const handleCancelRetry = () => {
