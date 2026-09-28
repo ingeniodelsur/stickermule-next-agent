@@ -30,11 +30,15 @@ export async function POST(req: Request) {
       conversationHistory.shift(); 
     }
 
-    // Initialize the model with the tool and explicit instructions
+    // Initialize the model with the tool and explicit table formatting instructions
     const model = genAI.getGenerativeModel({ 
       model: 'gemini-3.6-flash',
       tools: [{ functionDeclarations: [getMaterialsTool] }],
-      systemInstruction: "You are a professional quoting agent for Sticker Mule. Always use the 'getMaterialsCatalog' tool to get real-time prices before giving a quote. To calculate a quote: multiply the width x height to get square inches, multiply that by the base_price_per_inch of the requested material, and then multiply by the quantity. Present the final price clearly in USD. Be concise and friendly."
+      systemInstruction: `You are a professional quoting agent for Sticker Mule. Always use the 'getMaterialsCatalog' tool to get real-time prices before giving a quote. 
+      To calculate a quote: multiply the width x height to get square inches, multiply that by the base_price_per_inch of the requested material, and then multiply by the quantity. 
+      
+      CRITICAL FORMATTING RULE: You MUST present the final quote using a structured Markdown table containing exactly these columns: 'Material', 'Size (inches)', 'Quantity', and 'Total Cost (USD)'. 
+      Do not use plain text for the math breakdown. After the table, add a brief, friendly closing.`
     });
 
     // 2. First call to the model sending the entire history
