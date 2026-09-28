@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Clock, AlertCircle } from 'lucide-react';
+import { Send, Bot, User, Clock, AlertCircle, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -20,13 +20,43 @@ export default function Home() {
     }
   ]);
   const [input, setInput] = useState('');
+  
+  // Loading and action indicator states
   const [isLoading, setIsLoading] = useState(false);
+  const [actionText, setActionText] = useState('Analyzing request...');
   
   const [countdown, setCountdown] = useState<number | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const MAX_RETRIES = 1;
   const failedMessagesRef = useRef<Message[]>([]);
+  
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isLoading, countdown, actionText]);
+
+  // Dynamic action text rotation while loading
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isLoading) {
+      setActionText('Analyzing request...');
+      let step = 0;
+      interval = setInterval(() => {
+        step++;
+        if (step === 1) setActionText('Checking materials catalog...');
+        else if (step === 2) setActionText('Calculating quote...');
+        else if (step >= 3) setActionText('Generating response...');
+      }, 2000);
+    }
+    return () => clearInterval(interval);
+  }, [isLoading]);
+
+  // Handle countdown timer
   useEffect(() => {
     if (countdown === null) return;
     
@@ -46,7 +76,7 @@ export default function Home() {
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    return `m:{s < 10 ? '0' : ''}${s}`;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   const executeRequest = async (chatHistory: Message[]) => {
@@ -146,7 +176,6 @@ export default function Home() {
                 </div>
                 
                 <div className={`p-4 text-[15px] leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-gray-100 text-gray-800 rounded-3xl rounded-tr-sm' : 'bg-white border border-gray-100 text-gray-800 rounded-3xl rounded-tl-sm'}`}>
-                  {/* Markdown Renderer with Custom Tailwind Styling */}
                   {msg.role === 'user' ? (
                     <p>{msg.content}</p>
                   ) : (
@@ -170,22 +199,22 @@ export default function Home() {
                     </ReactMarkdown>
                   )}
                 </div>
-
               </div>
             </div>
           ))}
           
-          {/* Loading Indicator */}
+          {/* Dynamic Action Indicator */}
           {isLoading && (
-            <div className="flex justify-start">
+            <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2 duration-300">
               <div className="flex gap-3 max-w-[85%] flex-row">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 bg-[#ffe8d6] text-[#f46b10] shadow-sm">
                   <Bot size={16} />
                 </div>
-                <div className="p-4 bg-white border border-gray-100 rounded-3xl rounded-tl-sm shadow-sm flex items-center gap-1.5 h-[52px]">
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></div>
-                  <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></div>
+                <div className="px-5 py-3.5 bg-white border border-gray-100 rounded-3xl rounded-tl-sm shadow-sm flex items-center gap-3">
+                  <Loader2 size={16} className="text-[#f46b10] animate-spin" />
+                  <span className="text-[14px] font-medium text-gray-600 animate-pulse">
+                    {actionText}
+                  </span>
                 </div>
               </div>
             </div>
@@ -198,21 +227,23 @@ export default function Home() {
                 <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 bg-[#fff3eb] text-[#f46b10] border border-[#f46b10]/20">
                   <AlertCircle size={16} />
                 </div>
-                <div className="p-4 bg-[#fff3eb] border border-[#f46b10]/30 text-[#d95a0c] rounded-3xl rounded-tl-sm shadow-sm flex flex-col gap-2">
+                <div className="flex items-center justify-between p-4 bg-[#fff3eb] border border-[#f46b10]/30 text-[#d95a0c] rounded-3xl rounded-tl-sm shadow-sm w-full gap-4">
                   <div className="flex items-center gap-2 text-[15px]">
                     <Clock size={16} />
-                    <span>High demand. Retrying automatically in <strong>{formatTime(countdown)}</strong>...</span>
+                    <span>High demand. Retrying in <strong>{formatTime(countdown)}</strong>...</span>
                   </div>
                   <button 
                     onClick={handleCancelRetry}
-                    className="text-sm font-medium underline hover:text-[#f46b10] transition-colors self-start"
+                    className="px-4 py-1.5 text-sm font-medium bg-white border border-[#f46b10]/20 rounded-xl hover:bg-[#f46b10] hover:text-white transition-all shadow-sm flex-shrink-0"
                   >
-                    Cancel retry
+                    Cancel
                   </button>
                 </div>
               </div>
             </div>
           )}
+
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input Area */}
