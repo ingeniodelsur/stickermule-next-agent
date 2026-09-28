@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Send, Bot, User, Clock, AlertCircle, Loader2 } from 'lucide-react';
+// NEW: Imported Paperclip and X for file attachment UI
+import { Send, Bot, User, Clock, AlertCircle, Loader2, Paperclip, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -14,13 +15,17 @@ type Message = {
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: 'welcome-msg', // FIX: Changed from '1' to prevent collision with Supabase IDs
+      id: 'welcome-msg', // Using a unique ID to prevent React warnings when mixing with DB
       role: 'model',
       content: 'Hi! I am the Sticker Mule AI Assistant. How can I help you with your custom stickers today?'
     }
   ]);
   const [input, setInput] = useState('');
   
+  // NEW: States and refs for file upload
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [isLoading, setIsLoading] = useState(false);
   const [actionText, setActionText] = useState('Analyzing request...');
   
@@ -107,7 +112,7 @@ export default function Home() {
     
     if (countdown === 0) {
       setCountdown(null);
-      // NEW: Pass isRetry = true when the countdown finishes
+      // Pass isRetry = true when the countdown finishes
       executeRequest(failedMessagesRef.current, true);
       return;
     }
@@ -125,14 +130,14 @@ export default function Home() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // NEW: Add isRetry parameter defaulting to false
+  // Add isRetry parameter defaulting to false to prevent DB duplication
   const executeRequest = async (chatHistory: Message[], isRetry: boolean = false) => {
     setIsLoading(true);
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // NEW: Send the isRetry flag to the backend
+        // Send the isRetry flag to the backend
         body: JSON.stringify({ 
           messages: chatHistory,
           sessionId: sessionId,
@@ -180,16 +185,38 @@ export default function Home() {
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || countdown !== null) return; 
+  // NEW: Handle file selection from the hidden input
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
 
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input };
+  // NEW: Clear the selected file
+  const clearFile = () => {
+    setSelectedFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSend = async () => {
+    if ((!input.trim() && !selectedFile) || countdown !== null) return; 
+
+    // For now, we only push text to the UI. Handling the actual image upload to the backend comes next.
+    const userMsg: Message = { 
+      id: Date.now().toString(), 
+      role: 'user', 
+      content: selectedFile ? `[Attached File: ${selectedFile.name}]\n${input}` : input 
+    };
+    
     const newMessages = [...messages, userMsg];
     
     setMessages(newMessages);
     setInput('');
+    clearFile(); // Reset file input after sending
     
-    // NEW: Explicitly pass false for the initial request (not a retry)
+    // Explicitly pass false for the initial request (not a retry)
     await executeRequest(newMessages, false);
   };
 
@@ -228,7 +255,7 @@ export default function Home() {
                   {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
                 </div>
                 
-                <div className={`p-4 text-[15px] leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-gray-100 text-gray-800 rounded-3xl rounded-tr-sm' : 'bg-white border border-gray-100 text-gray-800 rounded-3xl rounded-tl-sm'}`}>
+                <div className={`p-4 text-[15px] leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-gray-100 text-gray-800 rounded-3xl rounded-tr-sm whitespace-pre-wrap' : 'bg-white border border-gray-100 text-gray-800 rounded-3xl rounded-tl-sm'}`}>
                   {msg.role === 'user' ? (
                     <p>{msg.content}</p>
                   ) : (
@@ -301,23 +328,58 @@ export default function Home() {
 
         {/* Input Area */}
         <div className={`p-4 bg-white border-t border-gray-100 transition-opacity ${countdown !== null ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
-          <div className="flex gap-3 max-w-4xl mx-auto">
-            <input
-              type="text"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder={countdown !== null ? "Waiting for retry..." : "Message Sticker Mule AI..."}
-              className="flex-1 p-4 border border-gray-200 rounded-2xl focus:outline-none focus:border-[#f46b10] focus:ring-1 focus:ring-[#f46b10] transition-all bg-gray-50/50 focus:bg-white disabled:bg-gray-100 disabled:text-gray-500 cursor-text disabled:cursor-not-allowed shadow-inner"
-              disabled={countdown !== null || isLoading}
-            />
-            <button
-              onClick={handleSend}
-              disabled={isLoading || !input.trim() || countdown !== null}
-              className="px-6 flex items-center justify-center bg-[#f46b10] text-white rounded-2xl hover:bg-[#d95a0c] disabled:bg-gray-200 disabled:text-gray-400 transition-all cursor-pointer disabled:cursor-not-allowed shadow-md hover:shadow-lg active:scale-95"
-            >
-              <Send size={20} />
-            </button>
+          <div className="flex flex-col max-w-4xl mx-auto gap-2">
+            
+            {/* NEW: File Preview Bubble */}
+            {selectedFile && (
+              <div className="flex items-center gap-2 bg-[#fff3eb] border border-[#f46b10]/30 text-[#d95a0c] px-3 py-1.5 rounded-xl self-start text-sm animate-in fade-in slide-in-from-bottom-2">
+                <Paperclip size={14} />
+                <span className="truncate max-w-[200px] font-medium">{selectedFile.name}</span>
+                <button 
+                  onClick={clearFile} 
+                  className="hover:text-red-500 transition-colors rounded-full p-0.5 ml-1"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+
+            <div className="flex gap-2 w-full">
+              {/* NEW: Hidden File Input & Trigger Button */}
+              <input 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                ref={fileInputRef} 
+                onChange={handleFileChange} 
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={countdown !== null || isLoading}
+                className="px-4 flex items-center justify-center bg-gray-50 border border-gray-200 text-gray-500 rounded-2xl hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50 transition-all cursor-pointer shadow-sm"
+                title="Attach logo image"
+              >
+                <Paperclip size={20} />
+              </button>
+
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder={countdown !== null ? "Waiting for retry..." : "Message Sticker Mule AI..."}
+                className="flex-1 p-4 border border-gray-200 rounded-2xl focus:outline-none focus:border-[#f46b10] focus:ring-1 focus:ring-[#f46b10] transition-all bg-gray-50/50 focus:bg-white disabled:bg-gray-100 disabled:text-gray-500 cursor-text disabled:cursor-not-allowed shadow-inner"
+                disabled={countdown !== null || isLoading}
+              />
+              
+              <button
+                onClick={handleSend}
+                disabled={isLoading || (!input.trim() && !selectedFile) || countdown !== null}
+                className="px-6 flex items-center justify-center bg-[#f46b10] text-white rounded-2xl hover:bg-[#d95a0c] disabled:bg-gray-200 disabled:text-gray-400 transition-all cursor-pointer disabled:cursor-not-allowed shadow-md hover:shadow-lg active:scale-95"
+              >
+                <Send size={20} />
+              </button>
+            </div>
           </div>
         </div>
 
