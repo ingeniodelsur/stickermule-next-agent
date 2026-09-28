@@ -14,7 +14,7 @@ type Message = {
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([
     {
-      id: '1',
+      id: 'welcome-msg', // FIX: Changed from '1' to prevent collision with Supabase IDs
       role: 'model',
       content: 'Hi! I am the Sticker Mule AI Assistant. How can I help you with your custom stickers today?'
     }
@@ -70,7 +70,7 @@ export default function Home() {
             
             // Keep the default welcome message, then append the history
             setMessages([
-              { id: '1', role: 'model', content: 'Hi! I am the Sticker Mule AI Assistant. How can I help you with your custom stickers today?' },
+              { id: 'welcome-msg', role: 'model', content: 'Hi! I am the Sticker Mule AI Assistant. How can I help you with your custom stickers today?' },
               ...historyMessages
             ]);
           }
