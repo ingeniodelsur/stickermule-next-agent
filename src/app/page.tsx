@@ -1,15 +1,19 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-// NEW: Imported Paperclip and X for file attachment UI
 import { Send, Bot, User, Clock, AlertCircle, Loader2, Paperclip, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
+// NEW: Updated Message type to support optional image data for Gemini Vision
 type Message = {
   id: string;
   role: 'user' | 'model';
   content: string;
+  inlineData?: {
+    data: string;
+    mimeType: string;
+  };
 };
 
 export default function Home() {
@@ -22,7 +26,7 @@ export default function Home() {
   ]);
   const [input, setInput] = useState('');
   
-  // NEW: States and refs for file upload
+  // States and refs for file upload
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -185,14 +189,14 @@ export default function Home() {
     }
   };
 
-  // NEW: Handle file selection from the hidden input
+  // Handle file selection from the hidden input
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setSelectedFile(e.target.files[0]);
     }
   };
 
-  // NEW: Clear the selected file
+  // Clear the selected file
   const clearFile = () => {
     setSelectedFile(null);
     if (fileInputRef.current) {
@@ -203,11 +207,33 @@ export default function Home() {
   const handleSend = async () => {
     if ((!input.trim() && !selectedFile) || countdown !== null) return; 
 
-    // For now, we only push text to the UI. Handling the actual image upload to the backend comes next.
+    let base64Data = '';
+    let mimeType = '';
+
+    // NEW: If a file is attached, convert it to Base64 before sending
+    if (selectedFile) {
+      const reader = new FileReader();
+      const filePromise = new Promise<void>((resolve, reject) => {
+        reader.onloadend = () => {
+          const result = reader.result as string;
+          // Extract the raw base64 string without the data URL prefix
+          const splitData = result.split(',');
+          base64Data = splitData[1];
+          mimeType = selectedFile.type;
+          resolve();
+        };
+        reader.onerror = reject;
+      });
+      reader.readAsDataURL(selectedFile);
+      await filePromise;
+    }
+
+    // NEW: Construct the message including the optional image payload
     const userMsg: Message = { 
       id: Date.now().toString(), 
       role: 'user', 
-      content: selectedFile ? `[Attached File: ${selectedFile.name}]\n${input}` : input 
+      content: selectedFile ? `[Attached File: ${selectedFile.name}]\n${input}` : input,
+      ...(selectedFile && { inlineData: { data: base64Data, mimeType: mimeType } })
     };
     
     const newMessages = [...messages, userMsg];
@@ -330,7 +356,7 @@ export default function Home() {
         <div className={`p-4 bg-white border-t border-gray-100 transition-opacity ${countdown !== null ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
           <div className="flex flex-col max-w-4xl mx-auto gap-2">
             
-            {/* NEW: File Preview Bubble */}
+            {/* File Preview Bubble */}
             {selectedFile && (
               <div className="flex items-center gap-2 bg-[#fff3eb] border border-[#f46b10]/30 text-[#d95a0c] px-3 py-1.5 rounded-xl self-start text-sm animate-in fade-in slide-in-from-bottom-2">
                 <Paperclip size={14} />
@@ -345,7 +371,7 @@ export default function Home() {
             )}
 
             <div className="flex gap-2 w-full">
-              {/* NEW: Hidden File Input & Trigger Button */}
+              {/* Hidden File Input & Trigger Button */}
               <input 
                 type="file" 
                 accept="image/*" 
