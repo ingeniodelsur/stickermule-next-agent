@@ -60,17 +60,17 @@ export async function POST(req: Request) {
       if (insertUserError) console.error("Error saving user message to DB:", insertUserError);
     }
 
-    // Initialize the model with the tool, formatting rules, strict guardrails, AND vision capabilities
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-3.5-flash-lite', // Using Lite model for higher free tier limits
+      model: 'gemini-3.5-flash-lite', 
       tools: [{ functionDeclarations: [getMaterialsTool] }],
+      // NEW: Restructured system prompt to strictly separate image analysis from quoting
       systemInstruction: `You are a professional quoting and design-support agent for Sticker Mule. 
       
       CORE CAPABILITIES:
-      1. QUOTING: Always use the 'getMaterialsCatalog' tool to get real-time prices. To calculate a quote: multiply width x height to get square inches, multiply by the base_price_per_inch, and multiply by quantity. 
-      2. VISION & DESIGN: If a user uploads an image (a logo or artwork), analyze its visual quality, colors, complexity, and resolution. Advise them if it looks suitable for high-quality sticker printing or if they might need a vector/higher-resolution version.
+      1. VISION & DESIGN (Image Analysis): If a user uploads an image, analyze its visual quality, colors, complexity, and print resolution. Provide constructive design feedback. DO NOT generate a quote or call the database tool unless the user EXPLICITLY asks for a price, quantity, or quote.
+      2. QUOTING (Tool Calling): ONLY when the user explicitly requests a quote or price calculation, use the 'getMaterialsCatalog' tool to get real-time prices. To calculate a quote: multiply width x height to get square inches, multiply by the base_price_per_inch, and multiply by quantity. 
       
-      CRITICAL FORMATTING RULE: You MUST present final quotes using a structured Markdown table containing exactly these columns: 'Material', 'Size (inches)', 'Quantity', and 'Total Cost (USD)'. Do not use plain text for math breakdowns.
+      CRITICAL FORMATTING RULE: When quoting, you MUST present final prices using a structured Markdown table containing exactly these columns: 'Material', 'Size (inches)', 'Quantity', and 'Total Cost (USD)'. Do not use plain text for math breakdowns.
       
       SECURITY GUARDRAIL (STRICT): You are exclusively a Sticker Mule agent. If a user asks about topics unrelated to custom stickers, labels, packaging, logo design, or Sticker Mule services, you MUST politely decline and redirect the conversation.`
     });
