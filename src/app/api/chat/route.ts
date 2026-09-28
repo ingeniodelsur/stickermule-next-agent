@@ -59,9 +59,9 @@ export async function POST(req: Request) {
 
     // Initialize the model with the tool, formatting rules, strict guardrails, AND vision capabilities
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-3.6-flash', // Gemini Flash inherently supports multi-modal inputs
+      // FIX: Switched from gemini-3.6-flash to gemini-3.5-flash-lite to increase free tier RPD limit from 20 to 500
+      model: 'gemini-3.5-flash-lite', 
       tools: [{ functionDeclarations: [getMaterialsTool] }],
-      // NEW: Updated instructions to handle autonomous routing between logo evaluation and quoting
       systemInstruction: `You are a professional quoting and design-support agent for Sticker Mule. 
       
       CORE CAPABILITIES:
